@@ -1,0 +1,281 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+enum UserRole {
+  ADMIN
+  BOK
+  MARKETING
+  SALES
+  GUEST
+}
+
+enum Channel {
+  WEB
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum MessageFrom {
+  USER
+  BOT
+  CONTACT
+}
+
+enum TicketStatus {
+  NEW
+  IN_PROGRESS
+  PENDING
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum ProviderType {
+  EMAIL
+  SMS
+  PUSH
+  AI
+  MAUTIC
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum DealStage {
+  LEAD
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  CLOSED_WON
+  CLOSED_LOST
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  role         UserRole @default(GUEST)
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  assignedTickets Ticket[]
+  ownedDeals      Deal[]
+  assignedTasks   Task[]
+  conversations   Conversation[]
+  messages        Message[]
+
+  @@map("users")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  channel   Channel  @default(WEB)
+  contactId String?
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  contact     Contact?    @relation(fields: [contactId], references: [id])
+  user        User?       @relation(fields: [userId], references: [id])
+  messages    Message[]
+  tickets     Ticket[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  from           MessageFrom
+  content        String
+  rating         Int?        // 1-5 or thumbs up/down
+  userId         String?
+  createdAt      DateTime    @default(now())
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@map("messages")
+}
+
+model KnowledgeArticle {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  markdown  String
+  status    String   @default("draft") // draft, published
+  tags      String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  chunks ArticleChunk[]
+
+  @@map("knowledge_articles")
+}
+
+model ArticleChunk {
+  id        String  @id @default(cuid())
+  articleId String
+  content   String
+  embedding String  // Vector embeddings stored as JSON array
+
+  // Relations
+  article KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@map("article_chunks")
+}
+
+model Ticket {
+  id             String        @id @default(cuid())
+  subject        String
+  status         TicketStatus  @default(NEW)
+  priority       TicketPriority @default(MEDIUM)
+  assigneeId     String?
+  contactId      String?
+  conversationId String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  assignee     User?          @relation(fields: [assigneeId], references: [id])
+  contact      Contact?       @relation(fields: [contactId], references: [id])
+  conversation Conversation?  @relation(fields: [conversationId], references: [id])
+
+  @@map("tickets")
+}
+
+model Contact {
+  id           String   @id @default(cuid())
+  email        String?  @unique
+  phone        String?
+  firstName    String?
+  lastName     String?
+  city         String?
+  tags         String   @default("[]")
+  customFields String   @default("{}")
+  optInEmail   Boolean  @default(false)
+  optInSMS     Boolean  @default(false)
+  optInPush    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  conversations Conversation[]
+  tickets       Ticket[]
+  deals         Deal[]
+
+  @@map("contacts")
+}
+
+model Segment {
+  id    String @id @default(cuid())
+  name  String @unique
+  rules String @default("{}")   // Filter rules for segmenting contacts
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("segments")
+}
+
+model Deal {
+  id        String    @id @default(cuid())
+  title     String
+  stage     DealStage @default(LEAD)
+  value     Float?
+  ownerId   String
+  contactId String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  owner   User     @relation(fields: [ownerId], references: [id])
+  contact Contact? @relation(fields: [contactId], references: [id])
+
+  @@map("deals")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  dueAt       DateTime?
+  status      TaskStatus @default(TODO)
+  assigneeId  String
+  relatedType String?    // "deal", "ticket", "contact", etc.
+  relatedId   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  assignee User @relation(fields: [assigneeId], references: [id])
+
+  @@map("tasks")
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  type      NotificationType
+  to        String             // email, phone, or push token
+  payload   String             // Notification content
+  status    NotificationStatus @default(PENDING)
+  error     String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@map("notifications")
+}
+
+model ProviderConfig {
+  id       String       @id @default(cuid())
+  type     ProviderType
+  settings String       // Provider-specific configuration
+  enabled  Boolean      @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("provider_configs")
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  type      String
+  payload   String
+  createdAt DateTime @default(now())
+
+  @@map("event_logs")
+}
